@@ -144,6 +144,7 @@ jobs:
         ANDROID_VER: ${{ inputs.android_version }}
         KERNEL_VER: ${{ inputs.kernel_version }}
         OS_PATCH: ${{ inputs.os_patch_level }}
+        GKI_TAG: ${{ inputs.gki_tag }}
       run: |
         FORMATTED_BRANCH="${ANDROID_VER}-${KERNEL_VER}-${OS_PATCH}"
 
