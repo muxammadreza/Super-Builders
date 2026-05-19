@@ -1,0 +1,162 @@
+name: Build Sultan ZeroMount gs201
+
+permissions:
+  contents: read
+  actions: write
+
+on:
+  workflow_dispatch:
+    inputs:
+      tensynos_ref:
+        description: "Sultan kernel source ref/tag"
+        type: string
+        default: "20260314"
+      kernelsu_next_ref:
+        description: "KernelSU-Next setup ref/commit"
+        type: string
+        default: "2887ea49428bc3fb5184e7c35223f0a9a47ad100"
+      susfs_ref:
+        description: "susfs4ksu commit"
+        type: string
+        default: "e1c57040136760a57969fc6b1378cc936a257561"
+
+jobs:
+  build:
+    name: gs201 Sultan wksu-susfs zeromount
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      CONFIG: android_kernel_google_tensynos
+      CODENAME: gs201
+      ANDROID_VERSION: android14
+      KERNEL_VERSION: "6.1"
+      SUSFS_BRANCH: gki-android14-6.1
+
+    steps:
+      - name: Checkout Super-Builders
+        uses: actions/checkout@v4
+
+      - name: Free disk space
+        uses: endersonmenezes/free-disk-space@v3
+        with:
+          remove_android: true
+          remove_dotnet: true
+          remove_haskell: true
+          remove_tool_cache: true
+          remove_swap: true
+          remove_packages_one_command: true
+          testing: false
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y -qq bc bison flex libssl-dev libelf-dev dwarves lz4 zip wget git make
+
+      - name: Download GCC 14.2.0 toolchain
+        run: |
+          wget -q https://www.kernel.org/pub/tools/crosstool/files/bin/x86_64/14.2.0/x86_64-gcc-14.2.0-nolibc-aarch64-linux.tar.gz
+          tar -xf x86_64-gcc-14.2.0-nolibc-aarch64-linux.tar.gz
+
+      - name: Clone Sultan build dependencies
+        run: |
+          set -euxo pipefail
+          git clone https://github.com/TheWildJames/AnyKernel3.git -b sultan-gs201 AnyKernel3
+          git clone https://github.com/TheWildJames/kernel_patches.git kernel_patches
+          git clone https://github.com/kerneltoast/android_kernel_google_tensynos.git --depth=1 --branch "${{ inputs.tensynos_ref }}" "$CONFIG"
+          git clone https://gitlab.com/simonpunk/susfs4ksu.git -b "$SUSFS_BRANCH" susfs4ksu
+          git -C susfs4ksu checkout "${{ inputs.susfs_ref }}"
+          git -C "$CONFIG" rev-parse --short=12 HEAD
+
+      - name: Add KernelSU-Next
+        working-directory: ${{ env.CONFIG }}
+        run: |
+          set -euxo pipefail
+          curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/dev/kernel/setup.sh" | bash -s "${{ inputs.kernelsu_next_ref }}"
+          test -d KernelSU-Next
+
+      - name: Apply SUSFS patches exactly like Sultan r12
+        working-directory: ${{ env.CONFIG }}
+        run: |
+          set -euxo pipefail
+          cp ../susfs4ksu/kernel_patches/50_add_susfs_in_gki-${ANDROID_VERSION}-${KERNEL_VERSION}.patch ./
+          cp ../susfs4ksu/kernel_patches/fs/* ./fs/
+          cp ../susfs4ksu/kernel_patches/include/linux/* ./include/linux/
+
+          perl -0pi -e 's/if \(IS_ERR\(f\) && !libperfmgr_redirect\(&f, dfd, tmp, &op, how\)\) \{/if (IS_ERR(f)) {/g' fs/open.c
+          patch -p1 < 50_add_susfs_in_gki-${ANDROID_VERSION}-${KERNEL_VERSION}.patch || true
+          perl -0pi -e 's/if \(IS_ERR\(f\)\) \{/if (IS_ERR(f) && !libperfmgr_redirect(&f, dfd, tmp, &op, how)) {/g' fs/open.c
+
+          cp ../kernel_patches/sultan/sys.c_fix.patch ./
+          patch -p1 < sys.c_fix.patch
+
+          cd KernelSU-Next
+          cp "$GITHUB_WORKSPACE/kernel_patches/wild/ksun-e6ba52b-susfs-v2.1.0-a14-6.1-e1c57040.patch" ./
+          patch -p1 < ksun-e6ba52b-susfs-v2.1.0-a14-6.1-e1c57040.patch
+
+      - name: Apply ZeroMount kernel patch
+        working-directory: ${{ env.CONFIG }}
+        run: |
+          set -euxo pipefail
+          cp "$GITHUB_WORKSPACE/android14-6.1/KernelSU-Next/patches/60_zeromount-android14-6.1.patch" ./60_zeromount-android14-6.1.patch
+          patch -p1 -F3 --no-backup-if-mismatch < 60_zeromount-android14-6.1.patch
+          echo "CONFIG_ZEROMOUNT=y" >> ./arch/arm64/configs/${CODENAME}_defconfig
+          grep -R "config ZEROMOUNT" fs/Kconfig
+          grep -R "zeromount" fs/Makefile include/linux/zeromount.h fs/zeromount.c | head -40
+
+      - name: Configure Sultan wksu-susfs options
+        working-directory: ${{ env.CONFIG }}
+        run: |
+          set -euxo pipefail
+          {
+            echo "# KernelSU Configuration"
+            echo "CONFIG_KSU=y"
+            echo "CONFIG_KSU_SUSFS=y"
+            echo "# Mountify Support"
+            echo "CONFIG_TMPFS_XATTR=y"
+            echo "CONFIG_TMPFS_POSIX_ACL=y"
+            echo "# ZeroMount"
+            echo "CONFIG_ZEROMOUNT=y"
+          } >> ./arch/arm64/configs/${CODENAME}_defconfig
+          sed -i 's/CONFIG_LOCALVERSION="-Sultan"/CONFIG_LOCALVERSION="-Sultan-Wild-ZM"/' ./arch/arm64/configs/${CODENAME}_defconfig
+          sed -i '/echo "+"$/d' scripts/setlocalversion
+
+      - name: Build gs201 kernel
+        working-directory: ${{ env.CONFIG }}
+        run: |
+          set -euxo pipefail
+          export CROSS_COMPILE="$GITHUB_WORKSPACE/gcc-14.2.0-nolibc/aarch64-linux/bin/aarch64-linux-"
+          export CC="$GITHUB_WORKSPACE/gcc-14.2.0-nolibc/aarch64-linux/bin/aarch64-linux-gcc"
+          make CROSS_COMPILE="$CROSS_COMPILE" CC="$CC" -j$(nproc --all) ${CODENAME}_defconfig
+          grep '^CONFIG_ZEROMOUNT=y' out/.config
+          make CROSS_COMPILE="$CROSS_COMPILE" CC="$CC" LOCALVERSION_AUTO=0 -j$(nproc --all)
+
+      - name: Package AnyKernel3
+        run: |
+          set -euxo pipefail
+          cp "$CONFIG/out/arch/arm64/boot/Image.lz4" AnyKernel3/Image.lz4
+          cat "$CONFIG"/out/google-devices/gs201/dts/*.dtb > AnyKernel3/dtb
+          cd AnyKernel3
+          zip -r ../gs201-a16-wksu-susfs-zeromount-anykernel3.zip ./*
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gs201-a16-wksu-susfs-zeromount-anykernel3
+          path: gs201-a16-wksu-susfs-zeromount-anykernel3.zip
+          if-no-files-found: error
+
+      - name: Collect rejects
+        if: always()
+        run: |
+          set -euxo pipefail
+          mkdir -p patch-rejects
+          find "$CONFIG" -type f -name '*.rej' -print -exec cp --parents {} patch-rejects/ \; || true
+          find patch-rejects -type f -print
+
+      - name: Upload rejects
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sultan-zeromount-patch-rejects
+          path: patch-rejects/
+          if-no-files-found: ignore
