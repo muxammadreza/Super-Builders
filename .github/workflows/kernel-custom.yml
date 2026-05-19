@@ -176,10 +176,10 @@ on:
         description: "KSU commit override (empty = latest)"
         type: string
         default: ""
-  gki_tag:
-    description: "Exact GKI tag, e.g. android14-6.1-2025-09_r22"
-    type: string
-    default: ""
+      gki_tag:
+        description: "Exact GKI tag, e.g. android14-6.1-2025-09_r22"
+        type: string
+        default: ""
   workflow_call:
     inputs:
       kernel_target:
