@@ -90,8 +90,8 @@ jobs:
           patch -p1 < sys.c_fix.patch
 
           cd KernelSU-Next
-          cp "$GITHUB_WORKSPACE/kernel_patches/wild/ksun-e6ba52b-susfs-v2.1.0-a14-6.1-e1c57040.patch" ./
-          patch -p1 < ksun-e6ba52b-susfs-v2.1.0-a14-6.1-e1c57040.patch
+          cp "$GITHUB_WORKSPACE/android14-6.1/KernelSU-Next/patches/70_ksu_safety-kernelsu-next-6.1.patch" ./
+          patch -p1 --no-backup-if-mismatch < 70_ksu_safety-kernelsu-next-6.1.patch
 
       - name: Apply ZeroMount kernel patch
         working-directory: ${{ env.CONFIG }}
