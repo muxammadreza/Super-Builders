@@ -98,7 +98,28 @@ jobs:
         run: |
           set -euxo pipefail
           cp "$GITHUB_WORKSPACE/android14-6.1/KernelSU-Next/patches/60_zeromount-android14-6.1.patch" ./60_zeromount-android14-6.1.patch
-          patch -p1 -F3 --no-backup-if-mismatch < 60_zeromount-android14-6.1.patch
+          python3 - <<'PY'
+          from pathlib import Path
+          src = Path("60_zeromount-android14-6.1.patch")
+          dst = Path("60_zeromount-sultan-android14-6.1.patch")
+          lines = src.read_text().splitlines(keepends=True)
+          out = []
+          skip = False
+          removed = False
+          for line in lines:
+              if line.startswith("--- a/fs/proc/task_mmu.c"):
+                  skip = True
+                  removed = True
+                  continue
+              if skip and line.startswith("--- a/"):
+                  skip = False
+              if not skip:
+                  out.append(line)
+          if not removed:
+              raise SystemExit("task_mmu.c hunk was not found in ZeroMount patch")
+          dst.write_text("".join(out))
+          PY
+          patch -p1 -F3 --no-backup-if-mismatch < 60_zeromount-sultan-android14-6.1.patch
           echo "CONFIG_ZEROMOUNT=y" >> ./arch/arm64/configs/${CODENAME}_defconfig
           grep -R "config ZEROMOUNT" fs/Kconfig
           grep -R "zeromount" fs/Makefile include/linux/zeromount.h fs/zeromount.c | head -40 || true
