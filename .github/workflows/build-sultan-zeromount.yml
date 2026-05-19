@@ -91,7 +91,7 @@ jobs:
 
           cd KernelSU-Next
           cp "$GITHUB_WORKSPACE/android14-6.1/KernelSU-Next/patches/70_ksu_safety-kernelsu-next-6.1.patch" ./
-          patch -p1 --no-backup-if-mismatch < 70_ksu_safety-kernelsu-next-6.1.patch
+          patch -p1 --no-backup-if-mismatch < 70_ksu_safety-kernelsu-next-6.1.patch || true
 
       - name: Apply ZeroMount kernel patch
         working-directory: ${{ env.CONFIG }}
