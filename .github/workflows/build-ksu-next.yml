@@ -46,6 +46,9 @@ on:
       sukisu_commit:
         type: string
         default: ""
+      gki_tag:
+        type: string
+        default: ""
       device_codename:
         type: string
         default: ""
@@ -112,6 +115,7 @@ jobs:
         KERNEL_VER: ${{ inputs.kernel_version }}
         SUB_LEVEL: ${{ inputs.sub_level }}
         OS_PATCH: ${{ inputs.os_patch_level }}
+        GKI_TAG: ${{ inputs.gki_tag }}
       run: |
         CONFIG="${ANDROID_VER}-${KERNEL_VER}-${SUB_LEVEL}"
         KERNEL_ROOT="$GITHUB_WORKSPACE/$CONFIG"
@@ -152,6 +156,19 @@ jobs:
         fi
 
         repo --trace sync -c -j$(nproc --all) --fail-fast --no-tags --force-sync --no-clone-bundle
+
+        if [ -n "$GKI_TAG" ]; then
+          echo "Pinning kernel/common to exact GKI tag: $GKI_TAG"
+          git -C "$KERNEL_ROOT/common" fetch --depth=1 https://android.googlesource.com/kernel/common "refs/tags/$GKI_TAG"
+          git -C "$KERNEL_ROOT/common" checkout FETCH_HEAD
+          ACTUAL="$(git -C "$KERNEL_ROOT/common" rev-parse --short=12 HEAD)"
+          echo "Pinned common HEAD: $ACTUAL"
+
+          if [ "$GKI_TAG" = "android14-6.1-2025-09_r22" ] && [ "$ACTUAL" != "fa1d6308d1fe" ]; then
+            echo "ERROR: Expected fa1d6308d1fe for android14-6.1-2025-09_r22, got $ACTUAL"
+            exit 1
+          fi
+        fi
 
     - name: Extract Sublevel
       env:
