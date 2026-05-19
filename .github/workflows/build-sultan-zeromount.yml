@@ -101,7 +101,7 @@ jobs:
           patch -p1 -F3 --no-backup-if-mismatch < 60_zeromount-android14-6.1.patch
           echo "CONFIG_ZEROMOUNT=y" >> ./arch/arm64/configs/${CODENAME}_defconfig
           grep -R "config ZEROMOUNT" fs/Kconfig
-          grep -R "zeromount" fs/Makefile include/linux/zeromount.h fs/zeromount.c | head -40
+          grep -R "zeromount" fs/Makefile include/linux/zeromount.h fs/zeromount.c | head -40 || true
 
       - name: Configure Sultan wksu-susfs options
         working-directory: ${{ env.CONFIG }}
